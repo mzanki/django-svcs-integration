@@ -36,6 +36,16 @@ def raise_view(request):
     raise RuntimeError("boom")
 
 
+def raise_with_service(request):
+    django_svcs.get(request, Service)
+    raise RuntimeError("boom")
+
+
+async def araise_with_service(request):
+    await django_svcs.aget(request, Service)
+    raise RuntimeError("boom")
+
+
 def stream_view(request):
     svc = django_svcs.get(request, Service)
 

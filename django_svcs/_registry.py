@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, cast
 
 from django.apps import apps
 
@@ -10,6 +10,10 @@ import svcs
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+
+    from typing_extensions import TypeForm
+
+    from .apps import DjangoSvcsConfig
 
 
 def factory(fn: Callable[[svcs.Container], Any]) -> Callable[[svcs.Container], Any]:
@@ -49,16 +53,17 @@ def get_registry() -> svcs.Registry:
     Return the process-wide :class:`svcs.Registry` attached to the
     ``django_svcs`` AppConfig.
     """
-    return apps.get_app_config("django_svcs").registry  # type: ignore[attr-defined,no-any-return]
+    return cast("DjangoSvcsConfig", apps.get_app_config("django_svcs")).registry
 
 
 def register_factory(
-    svc_type: type,
+    svc_type: TypeForm[Any],
     factory: Callable,
     *,
     enter: bool = True,
     ping: Callable | None = None,
-    on_registry_close: Callable | None = None,
+    on_registry_close: Callable | Awaitable | None = None,
+    suppress_context_exit: bool = True,
 ) -> None:
     """
     Register *factory* for *svc_type* on the process-wide registry.
@@ -72,16 +77,18 @@ def register_factory(
         enter=enter,
         ping=ping,
         on_registry_close=on_registry_close,
+        suppress_context_exit=suppress_context_exit,
     )
 
 
 def register_value(
-    svc_type: type,
+    svc_type: TypeForm[Any],
     value: object,
     *,
     enter: bool = False,
     ping: Callable | None = None,
-    on_registry_close: Callable | None = None,
+    on_registry_close: Callable | Awaitable | None = None,
+    suppress_context_exit: bool = True,
 ) -> None:
     """
     Register *value* for *svc_type* on the process-wide registry.
@@ -95,17 +102,19 @@ def register_value(
         enter=enter,
         ping=ping,
         on_registry_close=on_registry_close,
+        suppress_context_exit=suppress_context_exit,
     )
 
 
 def overwrite_factory(
     request: HttpRequest,
-    svc_type: type,
+    svc_type: TypeForm[Any],
     factory: Callable,
     *,
     enter: bool = True,
     ping: Callable | None = None,
-    on_registry_close: Callable | None = None,
+    on_registry_close: Callable | Awaitable | None = None,
+    suppress_context_exit: bool = True,
 ) -> None:
     """
     Overwrite *svc_type*'s factory on the process registry and reset the
@@ -125,6 +134,7 @@ def overwrite_factory(
         enter=enter,
         ping=ping,
         on_registry_close=on_registry_close,
+        suppress_context_exit=suppress_context_exit,
     )
     container.close()
     _reset_container(request)
@@ -132,12 +142,13 @@ def overwrite_factory(
 
 def overwrite_value(
     request: HttpRequest,
-    svc_type: type,
+    svc_type: TypeForm[Any],
     value: object,
     *,
     enter: bool = False,
     ping: Callable | None = None,
-    on_registry_close: Callable | None = None,
+    on_registry_close: Callable | Awaitable | None = None,
+    suppress_context_exit: bool = True,
 ) -> None:
     """
     Overwrite *svc_type*'s value on the process registry and reset the
@@ -156,6 +167,7 @@ def overwrite_value(
         enter=enter,
         ping=ping,
         on_registry_close=on_registry_close,
+        suppress_context_exit=suppress_context_exit,
     )
     container.close()
     _reset_container(request)
@@ -163,12 +175,12 @@ def overwrite_value(
 
 def bind_local_value(
     request: HttpRequest,
-    svc_type: type,
+    svc_type: TypeForm[Any],
     value: object,
     *,
     enter: bool = False,
     ping: Callable | None = None,
-    on_registry_close: Callable | None = None,
+    on_registry_close: Callable | Awaitable | None = None,
 ) -> None:
     """
     Bind *value* for *svc_type* on the **per-request** container.
@@ -196,12 +208,12 @@ def bind_local_value(
 
 def bind_local_factory(
     request: HttpRequest,
-    svc_type: type,
+    svc_type: TypeForm[Any],
     factory: Callable,
     *,
     enter: bool = True,
     ping: Callable | None = None,
-    on_registry_close: Callable | None = None,
+    on_registry_close: Callable | Awaitable | None = None,
 ) -> None:
     """
     Bind *factory* for *svc_type* on the **per-request** container.

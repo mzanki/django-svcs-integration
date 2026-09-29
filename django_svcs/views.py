@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from django.http import JsonResponse
 from django.views import View
 
 from ._container import get_pings
+
+
+if TYPE_CHECKING:
+    from django.http import HttpRequest
 
 
 def _format(healthy: list[str], failing: dict[str, str]) -> JsonResponse:
@@ -24,7 +30,7 @@ class HealthCheckView(View):
 
     http_method_names = ["get", "head", "options"]
 
-    def get(self, request):
+    def get(self, request: HttpRequest) -> JsonResponse:
         healthy: list[str] = []
         failing: dict[str, str] = {}
         for ping in get_pings(request):
@@ -46,7 +52,7 @@ class AsyncHealthCheckView(View):
 
     http_method_names = ["get", "head", "options"]
 
-    async def get(self, request):
+    async def get(self, request: HttpRequest) -> JsonResponse:
         healthy: list[str] = []
         failing: dict[str, str] = {}
         for ping in get_pings(request):

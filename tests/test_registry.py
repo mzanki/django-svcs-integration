@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from django.test import TestCase
+from contextlib import contextmanager
+from dataclasses import dataclass
+
+from django.test import RequestFactory, TestCase
 
 import svcs
 
@@ -13,6 +16,11 @@ class Database:
 
 class Cache:
     pass
+
+
+@dataclass
+class Handler:
+    database: Database
 
 
 class GetRegistryTests(TestCase):
@@ -158,3 +166,71 @@ class CloseRegistryTests(TestCase):
         registry.close()
 
         self.assertEqual(called, [1])
+
+
+class ExceptionRegistrationTests(TestCase):
+    def tearDown(self):
+        django_svcs.get_registry()._services.pop(Database, None)
+
+    def test_registration_and_overwrite_helpers_forward_cleanup_option(self):
+        for name in ("register_factory", "register_value", "overwrite_factory", "overwrite_value"):
+            with self.subTest(helper=name):
+                errors = []
+
+                @contextmanager
+                def resource(errors=errors):
+                    try:
+                        yield Database()
+                    except RuntimeError as exc:
+                        errors.append(exc)
+                        raise
+
+                request = RequestFactory().get("/")
+                kwargs = {"suppress_context_exit": False}
+                value = resource
+                if name.endswith("value"):
+                    value = resource()
+                    kwargs["enter"] = True
+                args = (request, Database, value) if name.startswith("overwrite") else (Database, value)
+                getattr(django_svcs, name)(*args, **kwargs)
+
+                error = RuntimeError("cleanup")
+                with self.assertRaises(RuntimeError), django_svcs.svcs_from(request) as container:
+                    self.assertIsInstance(container.get(Database), Database)
+                    raise error
+                self.assertEqual(errors, [error])
+
+
+class AutowiringTests(TestCase):
+    def setUp(self):
+        django_svcs.register_factory(Database, Database)
+
+    def tearDown(self):
+        registry = django_svcs.get_registry()
+        registry._services.pop(Database, None)
+        registry._services.pop(Handler, None)
+
+    def test_autowire_resolves_dependencies_from_request_container(self):
+        django_svcs.register_factory(Handler, svcs.autowire(Handler))
+        request = RequestFactory().get("/")
+
+        with django_svcs.svcs_from(request):
+            handler = django_svcs.get(request, Handler)
+            self.assertIs(handler.database, django_svcs.get(request, Database))
+
+    async def test_aautowire_uses_local_bindings_and_cleans_up_async_dependencies(self):
+        closed = []
+
+        async def database():
+            yield Database()
+            closed.append(True)
+
+        request = RequestFactory().get("/")
+        django_svcs.bind_local_factory(request, Database, database)
+        django_svcs.bind_local_factory(request, Handler, svcs.aautowire(Handler))
+
+        async with django_svcs.svcs_from(request):
+            handler = await django_svcs.aget(request, Handler)
+            self.assertIs(handler.database, await django_svcs.aget(request, Database))
+            self.assertEqual(closed, [])
+        self.assertEqual(closed, [True])

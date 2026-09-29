@@ -4,29 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-svcs"
-version = "0.1.0"
+version = "0.2.0"
 description = "Django app for svcs"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 keywords = ["django", "services", "di"]
 classifiers = [
     "Framework :: Django",
-    "Framework :: Django :: 4.2",
-    "Framework :: Django :: 5.0",
-    "Framework :: Django :: 5.1",
     "Framework :: Django :: 5.2",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
 
 
 dependencies = [
-    "Django>=4.2,<6.0",
-    "svcs>=25.1.0",
+    "Django>=5.2,<6.0",
+    "svcs>=26.2.0",
+    "typing-extensions>=4.13.0",
 ]
 
 
@@ -46,15 +42,25 @@ django_svcs = [
 [dependency-groups]
 dev = [
     "coverage>=7.13.4",
+    "django-stubs[compatible-mypy]>=6.0.7,<7.0",
+    "mypy>=2.2",
     "pre-commit>=4.5.1",
     "ruff>=0.15.1",
 ]
 
 
+[tool.mypy]
+python_version = "3.12"
+files = ["django_svcs", "tests/typing_check.py"]
+strict = true
+# Registration callbacks intentionally accept arbitrary service signatures.
+disallow_any_generics = false
+
+
 [tool.ruff]
 line-length = 120
 indent-width = 4
-target-version = "py313"
+target-version = "py312"
 extend-exclude = [
     "*/migrations/*",
 ]

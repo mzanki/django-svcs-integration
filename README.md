@@ -2,8 +2,8 @@
 
 A Django integration for [`svcs`](https://github.com/hynek/svcs) — a typed,
 late-bound service registry for Python web apps. `svcs` is upstream by Hynek
-Schlawack and ships official integrations for Flask, Pyramid, AIOHTTP,
-Starlette, and FastAPI; this package is the Django counterpart.
+Schlawack and ships official integrations for Flask, AIOHTTP, Starlette,
+and FastAPI; this package is the Django counterpart.
 
 What it gives you:
 
@@ -16,16 +16,20 @@ What it gives you:
   chains.
 - A healthcheck CBV that runs every registered ping.
 
+See the [changelog](CHANGELOG.md) for release history and upgrade notes.
+
 ## Install
+
+Requires Python 3.12+, Django 5.2 (`>=5.2,<6.0`), and `svcs` 26.2.0+.
 
 ```bash
 pip install git+https://github.com/mzanki/django-svcs.git
 ```
 
-Or pin a tag/branch:
+Once the `0.2.0` release tag is published, pin it with:
 
 ```bash
-pip install git+https://github.com/mzanki/django-svcs.git@v0.1.0
+pip install git+https://github.com/mzanki/django-svcs.git@0.2.0
 ```
 
 ## Quickstart
@@ -123,10 +127,10 @@ That's the whole API surface, day one.
 
 | Symbol | Use |
 |---|---|
-| `register_factory(T, factory, *, enter=True, ping=None, on_registry_close=None)` | Register a factory at boot. Mirrors `svcs.Registry.register_factory`. |
-| `register_value(T, value)` | Register a pre-built singleton (no factory call). |
-| `get(request, *types)` / `aget(request, *types)` | Resolve up to ten services from the request's container. Returns single value or tuple. |
-| `get_abstract(request, T)` / `aget_abstract(request, T)` | Same but for `Protocol` / abstract types. |
+| `register_factory(T, factory, *, enter=True, ping=None, on_registry_close=None, suppress_context_exit=True)` | Register a factory at boot. Mirrors `svcs.Registry.register_factory`. |
+| `register_value(T, value, *, enter=False, ping=None, on_registry_close=None, suppress_context_exit=True)` | Register a pre-built singleton (no factory call). |
+| `get(request, *types)` / `aget(request, *types)` | Resolve up to ten services, including `Protocol` and abstract types, with inferred return types. Returns single value or tuple. |
+| `get_abstract(request, T)` / `aget_abstract(request, T)` | Deprecated compatibility helpers. Use `get` / `aget`; no deprecation warnings are emitted. |
 | `svcs_from(request)` | Get the raw `svcs.Container` for the request. Lazy-creates if absent. |
 | `get_pings(request)` | All registered `ServicePing` instances for healthchecks. |
 | `overwrite_factory(request, T, factory)` / `overwrite_value(request, T, value)` | Swap a registration on the **process-wide** registry and reset the cached instance for that request. Test-only — the override leaks into subsequent requests. |
@@ -150,6 +154,38 @@ manager (or is a generator), svcs **enters** it on resolve and **exits** it on
 **Two `with`s = bug.** If your service writes `with self.uow:` inside a
 method, register the UoW with `enter=False` — otherwise svcs also
 enters/exits, producing double-commit / double-rollback.
+
+## Exception-aware cleanup
+
+`register_factory`, `register_value`, and both `overwrite_*` helpers accept
+`suppress_context_exit`, matching upstream `svcs`. The default is `True`:
+service context managers exit without receiving the request's exception.
+Set it to `False` when cleanup needs to inspect the failure:
+
+```python
+django_svcs.register_factory(
+    Database,
+    connect_database,
+    suppress_context_exit=False,
+)
+```
+
+`SvcsMiddleware` passes observed view exceptions and streaming failures to
+`Container.close()` / `aclose()`, including async cancellation. A service's
+context manager cannot suppress the request exception by handling it.
+Successful responses close with no exception context; an HTTP error status
+alone is not treated as an exception.
+
+Django's `process_exception` hooks run in reverse middleware order. If an
+exception-handling middleware consumes an exception first, `SvcsMiddleware`
+cannot observe it. Place `SvcsMiddleware` after such a handler when you need
+it to observe view failures, while keeping it before middleware that binds
+request-local services. Exceptions converted into responses by other
+middleware also cannot be recovered here. For transaction boundaries that
+must see every failure, manage the context explicitly in your service code.
+
+The `bind_local_*` helpers expose the upstream container-local API, which
+does not currently accept `suppress_context_exit`.
 
 ## `overwrite_factory` vs `bind_local_*` — global vs per-request
 
@@ -196,6 +232,38 @@ django_svcs.register_factory(
 Use it whenever you'd otherwise rename a param to `svcs_container` just to
 satisfy introspection. The inner callable receives the container unchanged.
 
+## Autowiring
+
+Use upstream `svcs.autowire` to resolve a factory's dependencies from its
+type annotations. It works directly with the Django registration helpers:
+
+```python
+import svcs
+import django_svcs
+
+
+class Checkout:
+    def __init__(self, payments: PaymentClient):
+        self.payments = payments
+
+
+django_svcs.register_factory(PaymentClient, StripeClient)
+django_svcs.register_factory(Checkout, svcs.autowire(Checkout))
+
+# In a view:
+checkout = django_svcs.get(request, Checkout)
+```
+
+For async dependencies, register `svcs.aautowire(Checkout)` and resolve with
+`await django_svcs.aget(request, Checkout)`. The same wrappers work with
+`bind_local_factory`, using that request's local bindings. Context manager
+factories retain their normal cleanup behavior; decorate generator factories
+with `contextmanager` / `asynccontextmanager` before autowiring them.
+
+The `factory` adapter above remains useful for explicitly wiring lambdas.
+See the [upstream autowiring guide](https://svcs.hynek.me/en/stable/autowiring.html)
+for annotation requirements and examples.
+
 ## Healthcheck
 
 ```python
@@ -204,8 +272,8 @@ from django.urls import path
 from django_svcs.views import HealthCheckView, AsyncHealthCheckView
 
 urlpatterns = [
-    path("health/", HealthCheckView.as_view()),         # WSGI
-    path("ahealth/", AsyncHealthCheckView.as_view()),   # ASGI
+    path("health/", HealthCheckView.as_view()),  # WSGI
+    path("ahealth/", AsyncHealthCheckView.as_view()),  # ASGI
 ]
 ```
 
@@ -219,9 +287,17 @@ Register pings on factories:
 
 ```python
 django_svcs.register_factory(
-    Database, build_database, ping=lambda db: db.execute("SELECT 1"),
+    Database,
+    build_database,
+    ping=lambda db: db.execute("SELECT 1"),
 )
 ```
+
+Pings registered through `bind_local_factory` / `bind_local_value` are
+included too. A local registration replaces the global registration's ping
+for that service type. If the local registration has no ping, the global
+ping is disabled for that request. This behavior changed in `svcs` 26.1.0,
+so upgrading from 25.1.0 can change a healthcheck's status.
 
 ## Testing
 
@@ -232,6 +308,7 @@ Two patterns, depending on scope:
 ```python
 from django.test import RequestFactory
 import django_svcs
+
 
 def test_one():
     request = RequestFactory().get("/")
@@ -279,7 +356,7 @@ def export_csv(request):
 
     def rows():
         yield "id,total\n"
-        for dto in svc.stream_rows():     # backed by a live DB cursor
+        for dto in svc.stream_rows():  # backed by a live DB cursor
             yield f"{dto.id},{dto.total}\n"
 
     return StreamingHttpResponse(rows(), content_type="text/csv")
@@ -310,6 +387,7 @@ async def application(scope, receive, send):
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
                 import django_svcs
+
                 await django_svcs.aclose_registry()
                 await send({"type": "lifespan.shutdown.complete"})
                 return
@@ -339,6 +417,32 @@ healthcheck CBVs.
 
 If you're new to svcs, read its [docs](https://svcs.hynek.me) first;
 everything there carries over.
+
+## Development checks
+
+```bash
+uv sync --locked
+uv run python tests/manage.py test tests --noinput
+uv run mypy
+uv run ruff check .
+uv run ruff format --check .
+```
+
+Mypy checks the package and `tests/typing_check.py` with Django type stubs,
+including inferred return types for sync and async Protocol lookups and
+middleware responses. The remaining tests are exercised by Django's test
+runner. Development uses Python 3.13; Mypy and Ruff target the minimum
+supported Python version, 3.12.
+
+To measure coverage:
+
+```bash
+uv run coverage run --branch --source=django_svcs tests/manage.py test tests --noinput
+uv run coverage report -m
+```
+
+The older `get_abstract` / `aget_abstract` helpers remain available for
+compatibility.
 
 ## License
 

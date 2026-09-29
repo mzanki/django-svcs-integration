@@ -18,6 +18,8 @@ urlpatterns = [
     path("svc/<str:key>/", views.get_svc),
     path("aget/<str:key>/", views.aget_svc),
     path("raise/", views.raise_view),
+    path("raise-service/", views.raise_with_service),
+    path("araise-service/", views.araise_with_service),
     path("stream/", views.stream_view),
     path("astream/", views.astream_view),
 ]
