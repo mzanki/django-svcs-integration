@@ -17,6 +17,16 @@ if TYPE_CHECKING:
 _REQUEST_ATTR = "svcs_container"
 
 
+class _RequestContainer(svcs.Container):
+    """Remember async resolution even if Django runs the middleware in sync mode."""
+
+    _async_used = False
+
+    async def aget(self, *svc_types: TypeForm[Any]) -> Any:
+        self._async_used = True
+        return await super().aget(*svc_types)
+
+
 def svcs_from(request: HttpRequest) -> svcs.Container:
     """
     Return the :class:`svcs.Container` attached to *request*, creating one
@@ -28,7 +38,7 @@ def svcs_from(request: HttpRequest) -> svcs.Container:
     """
     container = getattr(request, _REQUEST_ATTR, None)
     if container is None:
-        container = svcs.Container(get_registry())
+        container = _RequestContainer(get_registry())
         setattr(request, _REQUEST_ATTR, container)
     return container
 

@@ -253,8 +253,8 @@ wheels = [
 ]
 
 [[package]]
-name = "django-svcs"
-version = "0.2.0"
+name = "django-svcs-integration"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "django" },

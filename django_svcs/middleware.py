@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING, Any, Final, cast, overload
 
 from django.http import StreamingHttpResponse
 
+from asgiref.sync import async_to_sync
+
+from ._container import _RequestContainer
+
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Iterator
@@ -105,7 +109,13 @@ def _close_sync(request: HttpRequest, exc_info: _ExcInfo | None = None) -> None:
     container = _pop_container(request)
     saved_exc_info = request.__dict__.pop(_EXCEPTION_ATTR, (None, None, None))
     if container is not None:
-        container.close(*(exc_info if exc_info is not None else saved_exc_info))
+        info = exc_info if exc_info is not None else saved_exc_info
+        if isinstance(container, _RequestContainer) and container._async_used:
+            # Django may adapt us to sync mode around an async view. The bridge
+            # runs cleanup on the ASGI loop that acquired the async services.
+            async_to_sync(container.aclose)(*info)
+        else:
+            container.close(*info)
 
 
 async def _close_async(request: HttpRequest, exc_info: _ExcInfo | None = None) -> None:

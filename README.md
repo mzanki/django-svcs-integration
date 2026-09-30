@@ -1,4 +1,4 @@
-# django-svcs
+# django-svcs-integration
 
 A Django integration for [`svcs`](https://github.com/hynek/svcs) — a typed,
 late-bound service registry for Python web apps. `svcs` is upstream by Hynek
@@ -23,13 +23,13 @@ See the [changelog](CHANGELOG.md) for release history and upgrade notes.
 Requires Python 3.12+, Django 5.2 (`>=5.2,<6.0`), and `svcs` 26.2.0+.
 
 ```bash
-pip install git+https://github.com/mzanki/django-svcs.git
+pip install git+https://github.com/mzanki/django-svcs-integration.git
 ```
 
-Once the `0.2.0` release tag is published, pin it with:
+Once the `0.2.1` release tag is published, pin it with:
 
 ```bash
-pip install git+https://github.com/mzanki/django-svcs.git@0.2.0
+pip install git+https://github.com/mzanki/django-svcs-integration.git@0.2.1
 ```
 
 ## Quickstart
@@ -404,13 +404,15 @@ not create the container itself — that happens lazily inside
 response (or after streaming-body iteration completes), the middleware
 closes the container, running every registered cleanup hook. Sync and async
 views are both supported via Django's standard hybrid middleware pattern.
+Under ASGI, async service cleanup also works when sync-only middleware makes
+Django run `SvcsMiddleware` in synchronous mode.
 
 ## Relationship to upstream `svcs`
 
 This package depends on [`svcs`](https://github.com/hynek/svcs) and
 re-exports its core types (`Registry`, `Container`, `ServicePing`) where
 useful. The svcs concepts (registry, container, factories, pings,
-`enter=True/False`) are unchanged — `django-svcs` only provides the Django
+`enter=True/False`) are unchanged — `django-svcs-integration` only provides the Django
 glue: the `AppConfig`, the middleware, the request-bound helpers, the
 per-request `bind_local_*` shortcuts, the `factory` adapter, and the
 healthcheck CBVs.

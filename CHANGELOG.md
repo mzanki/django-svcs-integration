@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Async request services are now cleaned up when a sync-only middleware below
+  `SvcsMiddleware` makes Django run it in synchronous mode under ASGI. Cleanup
+  runs on the request's event loop, including after streaming responses, and
+  still receives observed exceptions and cancellation.
+- When the middleware runs synchronously, requests using only synchronous
+  service resolution retain cleanup on the same thread. No public API or
+  dependency requirement changes.
+
 ## 0.2.0
 
 ### Added

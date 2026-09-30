@@ -3,8 +3,8 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "django-svcs"
-version = "0.2.0"
+name = "django-svcs-integration"
+version = "0.2.1"
 description = "Django app for svcs"
 readme = "README.md"
 requires-python = ">=3.12"
